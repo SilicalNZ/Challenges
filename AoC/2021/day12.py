@@ -47,5 +47,3 @@ for i in grid:
         else:
             result.append(" ")
     print("".join(result))
-
-exit()
