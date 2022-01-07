@@ -13,7 +13,7 @@ def round_key(
     key_buffer,      # [key_length]key_buffer
     key_length,      # int
     round_constant,  # int
-):  # [plain_text_length]int
+):  # [key_length]int
 
     # -- Reserve memory footprint ----------
     round_key_result = [0x00] * key_length  # [key_length]int
@@ -64,28 +64,21 @@ def round_key(
 def xor(
     plain_text_buffer,      # [plain_text_length]int
     key_buffer,             # [key_length]int
-    plain_text_iterations,  # int
     key_length,             # int
-    plain_text_length,      # int
-):  # [plain_text_length]int
+):  # [key_length]int
 
     # -- Reserve memory footprint ----------
-    result = [0x00] * plain_text_length  # [plain_text_length]int
+    result = [0x00] * key_length  # [key_length]int
 
     # -- Constants ----------
 
     # -- Navigate ----------
 
-    # Take block and split into chunks
-    for text_chunk_iteration in range(plain_text_iterations):
-        plain_text_start_index = text_chunk_iteration * key_length      # int
-
-        for element_index in range(key_length):
-
-            # -- Computation on element ----------
-            a = plain_text_buffer[element_index + plain_text_start_index]
-            b = key_buffer[element_index]
-            result[element_index + plain_text_start_index] = a ^ b
+    for element_index in range(key_length):
+        # -- Computation on element ----------
+        a = plain_text_buffer[element_index]
+        b = key_buffer[element_index]
+        result[element_index] = a ^ b
 
     # -- Return result ----------
     return result
@@ -155,13 +148,11 @@ def binary_substitution(
 
 def substitution(
     plain_text_buffer,      # [plain_text_length]int
-    plain_text_iterations,  # int
     key_length,             # int
-    plain_text_length,      # int
-):  # [plain_text_length]int
+):  # [key_length]int
 
     # -- Reserve memory footprint ----------
-    result = [0x00] * plain_text_length  # [plain_text_length]int
+    result = [0x00] * key_length  # [key_length]int
 
     # -- Constants ----------
     byte_length = 8          # int
@@ -169,21 +160,16 @@ def substitution(
 
     # -- Navigate ----------
 
-    # Take block and split into chunks
-    for text_chunk_iteration in range(plain_text_iterations):
-        plain_text_start_index = text_chunk_iteration * key_length      # int
-        plain_text_end_index = (1 + text_chunk_iteration) * key_length  # int
+    # Take chunk and split into elements
+    for element_index in range(key_length):
+        element = plain_text_buffer[element_index]  # int
 
-        # Take chunk and split into elements
-        for element_index in range(plain_text_start_index, plain_text_end_index):
-            element = plain_text_buffer[element_index]  # int
+        # -- Computation on element ----------
+        element_as_binary = int_to_binary(element, byte_length)  # [byte_length]bool
+        element = binary_substitution(element_as_binary)         # int
 
-            # -- Computation on element ----------
-            element_as_binary = int_to_binary(element, byte_length)  # [byte_length]bool
-            element = binary_substitution(element_as_binary)         # int
-
-            # -- Write to reserved memory ----------
-            result[element_index + plain_text_start_index] = element
+        # -- Write to reserved memory ----------
+        result[element_index] = element
 
     # -- Return result ----------
     return result
@@ -191,13 +177,11 @@ def substitution(
 
 def shift_row(
     plain_text_buffer,      # [plain_text_length]int
-    plain_text_iterations,  # int
     key_length,             # int
-    plain_text_length,      # int
-):  # [plain_text_length]int
+):  # [key_length]int
 
     # -- Reserve memory footprint ----------
-    result = [0x00] * plain_text_length  # [plain_text_length]int
+    result = [0x00] * key_length  # [key_length]int
 
     # -- Constants ----------
     row_modifier = [0x00, 0x01, 0x02, 0x03]  # [4]int
@@ -208,28 +192,24 @@ def shift_row(
 
     # -- Navigate ----------
 
-    # Take block and split into chunks
-    for text_chunk_iteration in range(plain_text_iterations):
-        plain_text_start_index = key_length * text_chunk_iteration  # int
+    # Take chunk and split into rows
+    for text_chunk_row_index in range(matrix_size_rows):
 
-        # Take chunk and split into rows
-        for text_chunk_row_index in range(matrix_size_rows):
+        # Take row and split into elements
+        for text_chunk_column_index in range(matrix_size_columns):
+            # Working with columns, means indexing along y-axis
+            element_index = text_chunk_row_index                       # int
+            element_row_modifier = row_modifier[text_chunk_row_index]  # int
 
-            # Take row and split into elements
-            for text_chunk_column_index in range(matrix_size_columns):
-                # Working with columns, means indexing along y-axis
-                element_index = text_chunk_row_index + plain_text_start_index    # int
-                element_row_modifier = row_modifier[text_chunk_row_index]  # int
+            # -- Computation on element ----------
+            element = plain_text_buffer[element_index + text_chunk_column_index * matrix_size_columns]  # int
+            result_index = element_index + (
+                (text_chunk_column_index + matrix_size_rows - element_row_modifier)
+                % matrix_size_rows
+            ) * matrix_size_rows  # int
 
-                # -- Computation on element ----------
-                element = plain_text_buffer[element_index + text_chunk_column_index * matrix_size_columns]  # int
-                result_index = element_index + (
-                    (text_chunk_column_index + matrix_size_rows - element_row_modifier)
-                    % matrix_size_rows
-                ) * matrix_size_rows  # int
-
-                # -- Write to reserved memory ----------
-                result[result_index] = element
+            # -- Write to reserved memory ----------
+            result[result_index] = element
 
     # -- Return result ----------
     return result
@@ -277,14 +257,12 @@ def mix_column(
 
 
 def mix_columns(
-    plain_text_buffer,      # [plain_text_length]int
-    plain_text_iterations,  # int
+    plain_text_buffer,      # [key_length]int
     key_length,             # int
-    plain_text_length,      # int
-):  # [plain_text_length]int
+):  # [key_length]int
 
     # -- Reserve memory footprint ----------
-    result = [0x00] * plain_text_length  # [plain_text_length]int
+    result = [0x00] * key_length  # [key_length]int
     column = [0x00] * 4
 
     # -- Constants ----------
@@ -295,29 +273,25 @@ def mix_columns(
 
     # -- Navigate ----------
 
-    # Take block and split into chunks
-    for text_chunk_iteration in range(plain_text_iterations):
-        plain_text_start_index = key_length * text_chunk_iteration  # int
+    # Take chunk and split into columns
+    for text_chunk_column_iteration in range(matrix_size_columns):
+        text_chunk_column_start_index = matrix_size_columns * text_chunk_column_iteration
 
-        # Take chunk and split into columns
-        for text_chunk_column_iteration in range(matrix_size_columns):
-            text_chunk_column_start_index = matrix_size_columns * text_chunk_column_iteration
+        # Take column and split into elements
+        for text_chunk_row_index in range(matrix_size_rows):
+            position = text_chunk_row_index + text_chunk_column_start_index  # int
+            column[text_chunk_row_index] = plain_text_buffer[position]
 
-            # Take column and split into elements
-            for text_chunk_row_index in range(matrix_size_rows):
-                position = text_chunk_row_index + text_chunk_column_start_index + plain_text_start_index  # int
-                column[text_chunk_row_index] = plain_text_buffer[position]
+        # -- Computation on element ----------
+        element = mix_column(column)  # [plain_text_length]int
 
-            # -- Computation on element ----------
-            element = mix_column(column)  # [plain_text_length]int
+        position = text_chunk_column_start_index  # int
 
-            position = text_chunk_column_start_index + plain_text_start_index  # int
-
-            # -- Write to reserved memory ----------
-            result[position] = element[0]
-            result[position + 1] = element[1]
-            result[position + 2] = element[2]
-            result[position + 3] = element[3]
+        # -- Write to reserved memory ----------
+        result[position] = element[0]
+        result[position + 1] = element[1]
+        result[position + 2] = element[2]
+        result[position + 3] = element[3]
 
     # -- Return result ----------
     return result
@@ -326,11 +300,13 @@ def mix_columns(
 def aes(
     key,         # str
     plain_text,  # str
+    iv,          # str
 ):  # str
 
     # -- Constants ----------
     key_length = len(key)  # int
     assert key_length == 16
+    assert len(iv) == key_length
 
     plain_text_length = len(plain_text)  # int
 
@@ -341,31 +317,50 @@ def aes(
     # -- Reserve memory footprint ----------
     key_buffer = list(map(ord, key))                         # [key_length]int
     plain_text_buffer = list(map(ord, plain_text))           # [plain_text_length]int
+    plain_text_chunk_buffer = [0 for _ in range(key_length)] # [key_length]int
+    result = [0 for _ in range(plain_text_length)]           # [plain_text_length]int
+    previous_plain_text_chunk_buffer = list(map(ord, iv))    # [key_length]int
 
     plain_text_iterations = plain_text_length // key_length  # int
 
     # -- Navigate ----------
 
-    # Round 0, Add Roundkey
-    result = xor(plain_text_buffer, key_buffer, plain_text_iterations, key_length, plain_text_length)
+    # Take block and split into chunks
+    for text_chunk_iteration in range(plain_text_iterations):
+        plain_text_start_index = key_length * text_chunk_iteration  # int
 
-    latest_key = key_buffer
-    for round_constant in range(10):
-        # Substitution Bytes
-        result = substitution(result, plain_text_iterations, key_length, plain_text_length)
+        for i in range(key_length):
+            plain_text_chunk_buffer[i] = plain_text_buffer[plain_text_start_index + i]
 
-        # Shift Row
-        result = shift_row(result, plain_text_iterations, key_length, plain_text_length)
+        # -- Computation on element ----------
+        plain_text_current_buffer = xor(previous_plain_text_chunk_buffer, plain_text_chunk_buffer, key_length)
 
-        # Mix Column
-        if round_constant != 9:
-            result = mix_columns(result, plain_text_iterations, key_length, plain_text_length)
+        # Round 0, Add Roundkey
+        plain_text_current_buffer = xor(plain_text_current_buffer, key_buffer, key_length)
 
-        # Add Roundkey
-        latest_key = round_key(latest_key, key_length, round_constant)
-        result = xor(result, latest_key, plain_text_iterations, key_length, plain_text_length)
+        latest_key = key_buffer
+        for round_constant in range(10):
+            # Substitution Bytes
+            plain_text_current_buffer = substitution(plain_text_current_buffer, key_length)
 
+            # Shift Row
+            plain_text_current_buffer = shift_row(plain_text_current_buffer, key_length)
+
+            # Mix Column
+            if round_constant != 9:
+                plain_text_current_buffer = mix_columns(plain_text_current_buffer, key_length)
+
+            # Add Roundkey
+            latest_key = round_key(latest_key, key_length, round_constant)
+            plain_text_current_buffer = xor(plain_text_current_buffer, latest_key, key_length)
+
+        # -- Write to reserved memory ----------
+        for i in range(key_length):
+            result[plain_text_start_index + i] = plain_text_current_buffer[i]
+            previous_plain_text_chunk_buffer[i] = plain_text_current_buffer[i]
+
+    # -- Return result ----------
     return result
 
-
-print(list(map(hex, aes("Thats my Kung Fu", "Two One Nine Two"))))
+if __name__ == "__main__":
+    print(list(map(hex, aes("Thats my Kung Fu", "Two One Nine TwoTwo One Nine Two", "abcdefghijklmnop"))))
