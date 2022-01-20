@@ -312,7 +312,9 @@ def aes(
 
     # Pad plain_text
     if plain_text_length % key_length != 0:
-        plain_text_length += key_length - (plain_text_length % key_length)
+        plain_text_padding = key_length - (plain_text_length % key_length)
+        plain_text_length += plain_text_padding
+        plain_text += " " * plain_text_padding
 
     # -- Reserve memory footprint ----------
     key_buffer = list(map(ord, key))                         # [key_length]int
