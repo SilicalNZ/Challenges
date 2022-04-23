@@ -21,6 +21,8 @@ type Unit struct {
 	UnitType UnitType
 	PosX     int
 	PosY     int
+
+	ShieldLife int
 }
 
 type ThreatType int
@@ -59,12 +61,27 @@ type Base struct {
 	PosY int
 }
 
+type GameLoop struct {
+	Player0Base Base
+	Player1Base Base
+}
+
 type ErrorCode = string
 
 const (
 	ErrorCodeFmtScan ErrorCode = `unexpected error extracting scan: %s`
 )
 
+const ThreatValue = 4500
+
+// -- FUNCTIONS ----------
+
+// -- Utilities ----------
+func distanceFormula(x0, x1, y0, y1 int) float64 {
+	return math.Sqrt(math.Pow(float64(x1-x0), 2) + math.Pow(float64(y1-y0), 2))
+}
+
+// -- Behaviour ----------
 func retrieveMutableInformationFromFmtScan() (*Player, *Player, Monsters, error) {
 
 	var playerInfo [][2]int
@@ -116,6 +133,8 @@ func retrieveMutableInformationFromFmtScan() (*Player, *Player, Monsters, error)
 				UnitType: unitType,
 				PosX:     x,
 				PosY:     y,
+
+				ShieldLife: shieldLife,
 			}
 
 			switch unitType {
@@ -153,73 +172,98 @@ func retrieveMutableInformationFromFmtScan() (*Player, *Player, Monsters, error)
 	return player0, player1, monsters, nil
 }
 
-func (monsters Monsters) FindClosest(heroes Heroes, base Base) (map[*Hero]*Monster, error) {
-	var distanceFormula = func(x0, x1, y0, y1 int) float64 {
-		return math.Sqrt(math.Pow(float64(x1-x0), 2) + math.Pow(float64(y1-y0), 2))
-	}
+// -- METHODS ----------
 
-	var heroesCopy = Heroes{heroes[0], heroes[1], heroes[2]}
+// -- Base ----------
+func (base Base) distanceFrom(x0, y0 int) (int, int) {
+	return int(math.Abs(float64(base.PosX - x0))), int(math.Abs(float64(base.PosY - y0)))
+}
 
+// -- GameLoop ----------
+func (gameLoop GameLoop) Wait() {
+	fmt.Println("WAIT")
+}
+
+func (gameLoop GameLoop) Move(x0, x1 int) {
+	fmt.Printf("MOVE %s %s\n", strconv.Itoa(x0), strconv.Itoa(x1))
+}
+
+func (gameLoop GameLoop) SpellControl(monsterID, x0, x1 int) {
+	fmt.Printf("SPELL CONTROL %s %s %s\n", strconv.Itoa(monsterID), strconv.Itoa(x0), strconv.Itoa(x1))
+}
+
+func (gameLoop GameLoop) SpellWind(x0, x1 int) {
+	fmt.Printf("SPELL WIND %s %s\n", strconv.Itoa(x0), strconv.Itoa(x1))
+}
+
+// -- Monster ----------
+func (monster Monster) Distance(x0, y0 int) float64 {
+	return distanceFormula(monster.PosX, x0, monster.PosY, y0)
+}
+
+func (monsters Monsters) OrderByCoordinate(x0, y0 int) Monsters {
 	sort.Slice(monsters, func(i, j int) bool {
-		return distanceFormula(
-			monsters[i].PosX,
-			base.PosX,
-			monsters[i].PosY,
-			base.PosY,
-		) < distanceFormula(
-			monsters[j].PosX,
-			base.PosX,
-			monsters[j].PosY,
-			base.PosY,
-		)
+		return monsters[i].Distance(x0, y0) < monsters[j].Distance(x0, y0)
 	})
 
-	log.Println(*heroes[0])
-	log.Println(*heroes[1])
-	log.Println(*heroes[2])
+	return monsters
+}
 
-	var result = map[*Hero]*Monster{}
-	{
-		for x, monster := range monsters {
-			if x >= 3 {
-				break
-			}
+// -- Hero ----------
+func (hero Hero) AttackMostThreateningMonster(monsters Monsters, base Base) *Monster {
+	if len(monsters) == 0 {
+		return nil
+	}
 
-			log.Println(*monster)
+	monsters.OrderByCoordinate(base.PosX, base.PosY)
 
-			var smallestDistance float64
-			var smallestHero *Hero
-			for _, hero := range heroesCopy {
+	var selectedMonster = monsters[0]
 
-				var distance = distanceFormula(
-					monster.PosX,
-					hero.PosX,
-					monster.PosY,
-					hero.PosY,
-				)
+	if selectedMonster.Distance(base.PosX, base.PosY) >= ThreatValue {
+		return nil
+	} else {
+		return selectedMonster
+	}
+}
 
-				if smallestHero == nil || smallestDistance > distance {
-					smallestHero = hero
-					smallestDistance = distance
-				}
-			}
+func (hero Hero) RedirectMonster(monsters Monsters, base Base) *Monster {
+	if len(monsters) == 0 {
+		return nil
+	}
 
-			for i, hero := range heroesCopy {
-				if hero == smallestHero {
-					heroesCopy = append(heroesCopy[:i], heroesCopy[i+1:]...)
-					break
-				}
+	monsters.OrderByCoordinate(hero.PosX, hero.PosY)
 
-			}
-
-			log.Println(*smallestHero)
-
-			result[smallestHero] = monster
+	var selectedMonster *Monster
+	for _, monster := range monsters {
+		if monster.Threat != Player1ThreatType && monster.Health > 10 && monster.Distance(hero.PosX, hero.PosY) <= 2200 && monster.Distance(base.PosX, base.PosY) >= 7000 {
+			selectedMonster = monster
+			break
 		}
 	}
 
-	log.Println(len(result))
-	return result, nil
+	return selectedMonster
+}
+
+func (hero Hero) WindAttackMonster(monster Monster, base Base) bool {
+	if monster.Distance(base.PosX, base.PosY) <= 1200 && monster.ShieldLife == 0 {
+		return true
+	} else {
+		return false
+	}
+}
+
+func (hero Hero) WanderAttackMonster(monsters Monsters, base Base, opponentBase Base) *Monster {
+	monsters.OrderByCoordinate(hero.PosX, hero.PosY)
+
+	var selectedMonster *Monster
+	for _, monster := range monsters {
+		if monster.Distance(opponentBase.PosX, opponentBase.PosY) > 7000 && monster.Threat != Player1ThreatType && monster.Distance(base.PosX, base.PosY) >= 7000 {
+			selectedMonster = monster
+			break
+		}
+	}
+
+	return selectedMonster
 }
 
 func retrieveImmutableInformationFromFmtScan() (Base, int, error) {
@@ -248,83 +292,33 @@ func retrieveImmutableInformationFromFmtScan() (Base, int, error) {
 	return base, heroesPerPlayer, nil
 }
 
-func retrieveMutableInformationTest() (*Player, *Player, Monsters, error) {
-	var monsters = []*Monster{
-		{
-			Unit: Unit{
-				ID:       0,
-				UnitType: 0,
-				PosX:     0,
-				PosY:     0,
-			},
-
-			Health:      0,
-			TrajectoryX: 0,
-			TrajectoryY: 0,
-			Threat:      1,
-		},
-		{
-			Unit: Unit{
-				ID:       0,
-				UnitType: 0,
-				PosX:     0,
-				PosY:     0,
-			},
-
-			Health:      0,
-			TrajectoryX: 0,
-			TrajectoryY: 0,
-			Threat:      1,
-		},
-		{
-			Unit: Unit{
-				ID:       0,
-				UnitType: 0,
-				PosX:     0,
-				PosY:     0,
-			},
-
-			Health:      0,
-			TrajectoryX: 0,
-			TrajectoryY: 0,
-			Threat:      1,
-		},
-		{
-			Unit: Unit{
-				ID:       0,
-				UnitType: 0,
-				PosX:     0,
-				PosY:     0,
-			},
-
-			Health:      0,
-			TrajectoryX: 0,
-			TrajectoryY: 0,
-			Threat:      1,
-		},
-		{
-			Unit: Unit{
-				ID:       0,
-				UnitType: 0,
-				PosX:     0,
-				PosY:     0,
-			},
-
-			Health:      0,
-			TrajectoryX: 0,
-			TrajectoryY: 0,
-			Threat:      1,
-		},
-	}
-
-	return nil, nil, monsters, nil
-}
-
 func main() {
 	var retrieveImmutableInformation = retrieveImmutableInformationFromFmtScan
 	var retrieveMutableInformation = retrieveMutableInformationFromFmtScan
 
 	var base, _, _ = retrieveImmutableInformation()
+
+	var opponentBase Base
+	{
+		if base.PosX == 0 {
+			opponentBase = Base{
+				PosX: 17630,
+				PosY: 9000,
+			}
+		} else {
+			opponentBase = Base{
+				PosX: 0,
+				PosY: 0,
+			}
+		}
+	}
+
+	var gameLoop = GameLoop{
+		Player0Base: base,
+		Player1Base: opponentBase,
+	}
+
+	var ct = 0
 
 	for {
 		var player0, _ *Player
@@ -339,22 +333,47 @@ func main() {
 			}
 		}
 
-		var directions map[*Hero]*Monster
-		{
-			if result, err := monsters.FindClosest(player0.Heroes, base); err != nil {
-				log.Panicf(`monsters.FindClosest: %s`, err)
-			} else {
-				directions = result
-			}
+		var hero0 = player0.Heroes[0]
+		var hero1 = player0.Heroes[1]
+		var hero2 = player0.Heroes[2]
+
+		// Hero0 Action
+		if ct <= 3 {
+			gameLoop.Move(8000, 4000)
+		} else if result := hero0.RedirectMonster(monsters, gameLoop.Player0Base); result != nil && player0.Mana >= 50 {
+			var monster = *result
+
+			gameLoop.SpellControl(monster.ID, gameLoop.Player1Base.PosX, gameLoop.Player1Base.PosY)
+		} else if result := hero0.WanderAttackMonster(monsters, gameLoop.Player0Base, gameLoop.Player1Base); result != nil {
+			var monster = *result
+
+			gameLoop.Move(monster.PosX, monster.PosY)
+		} else {
+			gameLoop.Move(8000, 4000)
 		}
 
-		for _, hero := range player0.Heroes {
-			if result, ok := directions[hero]; !ok {
-				fmt.Println("WAIT")
+		// Hero1 Action
+		if result := hero1.AttackMostThreateningMonster(monsters, gameLoop.Player0Base); result != nil {
+			var monster = *result
+
+			if hero1.WindAttackMonster(monster, gameLoop.Player0Base) {
+				gameLoop.SpellWind(gameLoop.Player1Base.PosX, gameLoop.Player1Base.PosY)
 			} else {
-				var directionHero = *result
-				fmt.Printf("MOVE %s %s\n", strconv.Itoa(directionHero.PosX), strconv.Itoa(directionHero.PosY))
+				gameLoop.Move(monster.PosX, monster.PosY)
 			}
+		} else {
+			gameLoop.Move(gameLoop.Player0Base.distanceFrom(3000, 500))
 		}
+
+		// Hero2 Action
+		if result := hero2.AttackMostThreateningMonster(monsters, gameLoop.Player0Base); result != nil {
+			var monster = *result
+
+			gameLoop.Move(monster.PosX, monster.PosY)
+		} else {
+			gameLoop.Move(gameLoop.Player0Base.distanceFrom(500, 3000))
+		}
+
+		ct += 1
 	}
 }
