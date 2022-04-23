@@ -72,11 +72,28 @@ const (
 	ErrorCodeFmtScan ErrorCode = `unexpected error extracting scan: %s`
 )
 
-const ThreatValue = 4500
+const ThreatValue = 7000
+
+var rotateTextCounter = 0
 
 // -- FUNCTIONS ----------
 
 // -- Utilities ----------
+func rotateText() string {
+	var ct = rotateTextCounter % 20
+
+	var text = "SILI"
+	for i := 0; i < ct; i++ {
+		text = "_" + text
+	}
+
+	for i := 0; i < 20-ct; i++ {
+		text = text + "_"
+	}
+
+	return text
+}
+
 func distanceFormula(x0, x1, y0, y1 int) float64 {
 	return math.Sqrt(math.Pow(float64(x1-x0), 2) + math.Pow(float64(y1-y0), 2))
 }
@@ -181,19 +198,23 @@ func (base Base) distanceFrom(x0, y0 int) (int, int) {
 
 // -- GameLoop ----------
 func (gameLoop GameLoop) Wait() {
-	fmt.Println("WAIT")
+	fmt.Printf("WAIT %s\n", rotateText)
 }
 
 func (gameLoop GameLoop) Move(x0, x1 int) {
-	fmt.Printf("MOVE %s %s\n", strconv.Itoa(x0), strconv.Itoa(x1))
+	fmt.Printf("MOVE %s %s %s\n", strconv.Itoa(x0), strconv.Itoa(x1), rotateText())
 }
 
 func (gameLoop GameLoop) SpellControl(monsterID, x0, x1 int) {
-	fmt.Printf("SPELL CONTROL %s %s %s\n", strconv.Itoa(monsterID), strconv.Itoa(x0), strconv.Itoa(x1))
+	fmt.Printf("SPELL CONTROL %s %s %s %s\n", strconv.Itoa(monsterID), strconv.Itoa(x0), strconv.Itoa(x1), rotateText())
 }
 
 func (gameLoop GameLoop) SpellWind(x0, x1 int) {
-	fmt.Printf("SPELL WIND %s %s\n", strconv.Itoa(x0), strconv.Itoa(x1))
+	fmt.Printf("SPELL WIND %s %s %s\n", strconv.Itoa(x0), strconv.Itoa(x1), rotateText())
+}
+
+func (gameLoop GameLoop) SpellShield(monsterID int) {
+	fmt.Printf("SPELL SHIELD  %s %s\n", strconv.Itoa(monsterID), rotateText())
 }
 
 // -- Monster ----------
@@ -235,7 +256,15 @@ func (hero Hero) RedirectMonster(monsters Monsters, base Base) *Monster {
 
 	var selectedMonster *Monster
 	for _, monster := range monsters {
-		if monster.Threat != Player1ThreatType && monster.Health > 10 && monster.Distance(hero.PosX, hero.PosY) <= 2200 && monster.Distance(base.PosX, base.PosY) >= 7000 {
+		if monster.Threat == Player1ThreatType {
+			continue
+		} else if monster.Health < 10 {
+			continue
+		} else if monster.Distance(hero.PosX, hero.PosY) > 2200 {
+			continue
+		} else if monster.Distance(base.PosX, base.PosY) < 7000 {
+			continue
+		} else {
 			selectedMonster = monster
 			break
 		}
@@ -244,11 +273,15 @@ func (hero Hero) RedirectMonster(monsters Monsters, base Base) *Monster {
 	return selectedMonster
 }
 
-func (hero Hero) WindAttackMonster(monster Monster, base Base) bool {
-	if monster.Distance(base.PosX, base.PosY) <= 1200 && monster.ShieldLife == 0 {
-		return true
-	} else {
+func (hero Hero) WindAttackMonsterDefensive(monster Monster, base Base) bool {
+	if monster.Distance(base.PosX, base.PosY) > 3000 {
 		return false
+	} else if monster.ShieldLife != 0 {
+		return false
+	} else if monster.Distance(hero.PosX, hero.PosY) > 1500 {
+		return false
+	} else {
+		return true
 	}
 }
 
@@ -257,13 +290,69 @@ func (hero Hero) WanderAttackMonster(monsters Monsters, base Base, opponentBase 
 
 	var selectedMonster *Monster
 	for _, monster := range monsters {
-		if monster.Distance(opponentBase.PosX, opponentBase.PosY) > 7000 && monster.Threat != Player1ThreatType && monster.Distance(base.PosX, base.PosY) >= 7000 {
+		if monster.Threat == Player1ThreatType {
+			continue
+		} else if monster.Distance(opponentBase.PosX, opponentBase.PosY) < 6000 {
+			continue
+		} else if monster.Distance(base.PosX, base.PosY) < 7000 {
+			continue
+		} else {
 			selectedMonster = monster
 			break
 		}
 	}
 
 	return selectedMonster
+}
+
+func (hero Hero) ShieldMonster(monsters Monsters, opponentBase Base) *Monster {
+	monsters.OrderByCoordinate(hero.PosX, hero.PosY)
+
+	var selectedMonster *Monster
+	for _, monster := range monsters {
+		if monster.Threat != Player1ThreatType {
+			continue
+		} else if monster.Health < 10 {
+			continue
+		} else if monster.Distance(hero.PosX, hero.PosY) >= 1700 {
+			break
+		} else if monster.Distance(opponentBase.PosX, opponentBase.PosY) > 4000 {
+			continue
+		} else {
+			selectedMonster = monster
+			break
+		}
+	}
+
+	return selectedMonster
+}
+
+func (hero Hero) WindAttackMonsterOffensive(monsters Monsters, opponentBase Base) *Monster {
+	monsters.OrderByCoordinate(hero.PosX, hero.PosY)
+
+	var selectedMonster *Monster
+	for _, monster := range monsters {
+		if monster.Threat != Player1ThreatType {
+			continue
+		} else if monster.Health < 10 {
+			continue
+		} else if monster.Distance(hero.PosX, hero.PosY) >= 2200 {
+			break
+		} else if monster.Distance(opponentBase.PosX, opponentBase.PosY) < 3800 || monster.Distance(opponentBase.PosX, opponentBase.PosY) > monster.Distance(hero.PosX, hero.PosY) {
+			continue
+		} else if monster.ShieldLife != 0 {
+			continue
+		} else {
+			selectedMonster = monster
+			break
+		}
+	}
+
+	return selectedMonster
+}
+
+func (hero Hero) Distance(x0, y0 int) float64 {
+	return distanceFormula(hero.PosX, x0, hero.PosY, y0)
 }
 
 func retrieveImmutableInformationFromFmtScan() (Base, int, error) {
@@ -319,6 +408,8 @@ func main() {
 	}
 
 	var ct = 0
+	var patrolSwitch = 0
+	var patrolOptions = [2][2]int{{5000, 8000}, {11000, 1000}}
 
 	for {
 		var player0, _ *Player
@@ -339,41 +430,46 @@ func main() {
 
 		// Hero0 Action
 		if ct <= 3 {
-			gameLoop.Move(8000, 4000)
-		} else if result := hero0.RedirectMonster(monsters, gameLoop.Player0Base); result != nil && player0.Mana >= 50 {
-			var monster = *result
-
-			gameLoop.SpellControl(monster.ID, gameLoop.Player1Base.PosX, gameLoop.Player1Base.PosY)
+			gameLoop.Move(gameLoop.Player1Base.distanceFrom(5000, 2000))
 		} else if result := hero0.WanderAttackMonster(monsters, gameLoop.Player0Base, gameLoop.Player1Base); result != nil {
 			var monster = *result
 
 			gameLoop.Move(monster.PosX, monster.PosY)
 		} else {
-			gameLoop.Move(8000, 4000)
+			gameLoop.Move(gameLoop.Player1Base.distanceFrom(2500, 5000))
 		}
 
 		// Hero1 Action
 		if result := hero1.AttackMostThreateningMonster(monsters, gameLoop.Player0Base); result != nil {
 			var monster = *result
 
-			if hero1.WindAttackMonster(monster, gameLoop.Player0Base) {
+			if hero1.WindAttackMonsterDefensive(monster, gameLoop.Player0Base) {
 				gameLoop.SpellWind(gameLoop.Player1Base.PosX, gameLoop.Player1Base.PosY)
 			} else {
 				gameLoop.Move(monster.PosX, monster.PosY)
 			}
 		} else {
-			gameLoop.Move(gameLoop.Player0Base.distanceFrom(3000, 500))
+			if hero0.Distance(patrolOptions[patrolSwitch][0], patrolOptions[patrolSwitch][1]) < 1000 {
+				patrolSwitch = int(math.Abs(float64(patrolSwitch - 1)))
+			}
+
+			gameLoop.Move(patrolOptions[patrolSwitch][0], patrolOptions[patrolSwitch][1])
 		}
 
 		// Hero2 Action
 		if result := hero2.AttackMostThreateningMonster(monsters, gameLoop.Player0Base); result != nil {
 			var monster = *result
 
-			gameLoop.Move(monster.PosX, monster.PosY)
+			if hero2.Distance(hero1.PosX, hero2.PosX) > 200 && hero1.WindAttackMonsterDefensive(monster, gameLoop.Player0Base) {
+				gameLoop.SpellWind(gameLoop.Player1Base.PosX, gameLoop.Player1Base.PosY)
+			} else {
+				gameLoop.Move(monster.PosX, monster.PosY)
+			}
 		} else {
-			gameLoop.Move(gameLoop.Player0Base.distanceFrom(500, 3000))
+			gameLoop.Move(gameLoop.Player0Base.distanceFrom(2000, 4500))
 		}
 
 		ct += 1
+		rotateTextCounter += 1
 	}
 }
