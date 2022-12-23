@@ -94,6 +94,8 @@ dust = {
     (Scale, Shadow): 1660,
 }
 
+crafts = {key: 0 for key in recipes.keys()}
+
 
 def craft(key):
     value = recipes[key]
@@ -105,6 +107,7 @@ def craft(key):
     ingredients[a] -= 1
     ingredients[b] -= 1
     ingredients[value] += 1
+    crafts[key] += 1
 
 
 def exhaust():
@@ -136,6 +139,7 @@ def shadow(ingredient_a, ingredient_b):
                 continue
 
             result[key] = value
+            print("     " * 4 * depth, key)
 
             if key[0] not in (Sand, Leaf):
                 constituents(key[0], depth+1, result)
@@ -169,15 +173,20 @@ def shadow(ingredient_a, ingredient_b):
         c, d = ingredients[ingredient_a], ingredients[ingredient_b]
 
         if c <= 0 or d <= 0:
-            continue
+            break
 
         ingredients[ingredient_a] -= 1
         ingredients[ingredient_b] -= 1
 
-
         result += dust.get((ingredient_b, ingredient_a), dust.get((ingredient_a, ingredient_b)))
 
     return result
+
+
+print(shadow(Shadow, Scale))
+[print(key[0].name, key[1].name, value) for key, value in crafts.items() if value != 0]
+
+exit()
 
 
 for key, value in dust.items():
