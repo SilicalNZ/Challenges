@@ -183,18 +183,19 @@ def shadow(ingredient_a, ingredient_b):
     return result
 
 
-print(shadow(Shadow, Scale))
-[print(key[0].name, key[1].name, value) for key, value in crafts.items() if value != 0]
+if __name__ == "__main__":
+    print(shadow(Shadow, Scale))
+    [print(key[0].name, key[1].name, value) for key, value in crafts.items() if value != 0]
 
-exit()
+    exit()
 
 
-for key, value in dust.items():
-    new = ingredients.copy()
+    for key, value in dust.items():
+        new = ingredients.copy()
 
-    result = 0
-    result += shadow(*key)
-    result += exhaust()
-    print(key[0].name, "+", key[1].name, "=", result)
+        result = 0
+        result += shadow(*key)
+        result += exhaust()
+        print(key[0].name, "+", key[1].name, "=", result)
 
-    ingredients = new
+        ingredients = new

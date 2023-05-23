@@ -74,7 +74,7 @@ class Inventory:
 
     _inverse_recipes: dict[Ingredient: RECIPE] = {b: a for a, b in _recipes.items()}
 
-    _dust: dict[RECIPE, int] = {
+    _dust_recipes: dict[RECIPE, int] = {
         (Leaf, Flame): 206,
         (Petal, Scale): 436,
         (Berries, Flame): 253,
@@ -85,6 +85,9 @@ class Inventory:
         (Essence, Scale): 702,
         (Scale, Beetle): 702,
         (Scale, Tooth): 1020,
+    }
+
+    _wild_cards: dict[RECIPE, int] = {
         (Berries, Spirit): 33 * CARD_VALUE,
         (Mushroom, Spirit): 40 * CARD_VALUE,
         (Power, Spirit): 50 * CARD_VALUE,
@@ -92,6 +95,7 @@ class Inventory:
         (Essence, Spirit): 45 * CARD_VALUE,
     }
 
+    _dust = {**_dust_recipes, **_wild_cards}
     _craft_history: dict[RECIPE, int] = {key: 0 for key in itertools.chain(_recipes.keys(), _dust.keys())}
     _dust_total = 0
 
@@ -110,6 +114,32 @@ class Inventory:
 
     def print_craft_history(self):
         [print(key[0].name, key[1].name, value) for key, value in self._craft_history.items() if value != 0]
+
+    def show_craft_history(self) -> str:
+        lines = []
+        for key, value in self._craft_history.items():
+            if value == 0:
+                continue
+
+            result = self._dust_recipes.get(key)
+            if result:
+                result = f"{result} dust"
+
+            if not result:
+                result = self._recipes.get(key)
+                if result:
+                    result = f"{result.name}"
+
+            if not result:
+                result = self._wild_cards.get(key)
+                if result:
+                    result = f"{result // CARD_VALUE} wild cards"
+
+
+            lines.append(f"{value:3} x ({key[0].name:10s} + {key[1].name:10s}) = {result:15s} x {value:3}")
+
+        lines.append(f"Total Dust: {self._dust_total}")
+        return "\n".join(lines)
 
     def _craft(self, recipe: RECIPE):
         constituent_a, constituent_b = recipe
@@ -205,36 +235,36 @@ class Inventory:
         self._dust_total = self._backup._dust_total
 
 
-inventory = Inventory({
-    Leaf: 26,
-    Petal: 22,
-    Berries: 21,
-    Water: 7,
-    Poison: 15,
-    Crystal: 6,
-    Mushroom: 7,
-    Flame: 4,
-    Power: 0,
-    Lightning: 2,
-    Essence: 1,
-    Scale: 2,
-    Beetle: 0,
-    Spirit: 1,
-    Steel: 2,
-    Tooth: 1,
-})
+if __name__ == "__main__":
+    inventory = Inventory({
+        Leaf: 26,
+        Petal: 22,
+        Berries: 21,
+        Water: 7,
+        Poison: 15,
+        Crystal: 6,
+        Mushroom: 7,
+        Flame: 4,
+        Power: 0,
+        Lightning: 2,
+        Essence: 1,
+        Scale: 2,
+        Beetle: 0,
+        Spirit: 1,
+        Steel: 2,
+        Tooth: 1,
+    })
 
 
-print("# Ingredients")
-inventory.print_ingredients()
-print()
+    print("# Ingredients")
+    inventory.print_ingredients()
+    print()
 
-inventory.iterate_make_dust_optimally(((Essence, Spirit), (Scale, Tooth)))
-print("Dust", inventory._dust_total)
-print("# Recipes")
-inventory.print_craft_history()
-print()
+    inventory.iterate_make_dust_optimally(((Lightning, Spirit), (Essence, Spirit), (Scale, Tooth)))
+    print("Dust", inventory._dust_total)
+    print("# Recipes")
+    inventory.print_craft_history()
+    print()
 
-print("# Leftover Ingredients")
-inventory.print_ingredients()
-print()
+    print("# Leftover Ingredients")
+    print(inventory.show_craft_history())
