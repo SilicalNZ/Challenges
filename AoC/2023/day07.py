@@ -1,13 +1,17 @@
 data = """"""
 
 
-cards = "A, K, Q, T, 9, 8, 7, 6, 5, 4, 3, 2, J".split(", ")
+cards = "A, K, Q, J, T, 9, 8, 7, 6, 5, 4, 3, 2".split(", ")
+p2_cards = "A, K, Q, J, T, 9, 8, 7, 6, 5, 4, 3, 2".split(", ")
+
 p2 = False
 
 from collections import Counter
 
 
 def convert_hand(hand):
+    if p2:
+        return "".join([chr(p2_cards.index(i)) for i in hand])
     return "".join([chr(cards.index(i)) for i in hand])
 
 
