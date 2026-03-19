@@ -1,0 +1,3 @@
+- Go script combiner, so I don't have to cram everything into one file
+- Would be nice to have a basic parser since codingame does the same way each time
+- Testing suite
