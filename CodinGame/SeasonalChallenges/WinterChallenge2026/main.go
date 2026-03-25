@@ -5,10 +5,15 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 )
+
+// TODO: Wait by going straight up
+// TODO: Kill other snakes and don't get killed
+// TODO: Snake walking into dead-ends
 
 func main() {
 	game := NewGame()
@@ -16,20 +21,19 @@ func main() {
 	for {
 		game.InputGameTurn()
 		commands := ""
+		var avoid []Coordinate
+
+		sort.Slice(game.Me.SnakeBots, func(i, j int) bool {
+			return game.Me.SnakeBots[i].Head().X < game.Me.SnakeBots[j].Head().X
+		})
 
 		for _, snakeBot := range game.Me.SnakeBots {
-			goal := snakeBot.Closest(game.Grid.PowerSources)
-			game.Debug(false, snakeBot.ID, goal)
-
-			directionName, path := game.SnakePath(&SnakePathReq{
-				Goal:        goal,
-				SnakeCoords: snakeBot.Body,
-			})
-
-			game.Debug(false, directionName, path)
-
-			if directionName != "" {
-				commands += fmt.Sprintf("%v %s;", snakeBot.ID, directionName)
+			target, command := snakeBot.FindPowerSource(game, avoid)
+			if command != "" {
+				avoid = append(avoid, target)
+				commands += command
+			} else {
+				commands += snakeBot.GoInALoop(game)
 			}
 		}
 
@@ -126,6 +130,10 @@ func (g *Game) InputGameTurn() {
 			g.Them.SnakeBots = append(g.Them.SnakeBots, s)
 		}
 	}
+
+	for _, powerSource := range g.Grid.PowerSources {
+		g.Grid.Cells[powerSource.Y][powerSource.X] = GridPowerSource
+	}
 }
 
 func (g *Game) scanLine(debug string) string {
@@ -154,6 +162,7 @@ type GridCell string
 const (
 	GridCellPlatform GridCell = "#"
 	GridCellFree     GridCell = "."
+	GridPowerSource  GridCell = "$"
 )
 
 type Grid struct {
@@ -161,9 +170,6 @@ type Grid struct {
 	PowerSources  []Coordinate
 	Width, Height int
 }
-
-// TODO: Gravity
-// TODO: Kill other snakes and don't get killed
 
 func NewGrid(scanLine func(debug string) string, width int, height int) *Grid {
 	grid := &Grid{
@@ -190,6 +196,7 @@ func NewGrid(scanLine func(debug string) string, width int, height int) *Grid {
 
 type SnakePathReq struct {
 	Goal          Coordinate
+	SnakeBotID    SnakeBotID
 	SnakeCoords   []Coordinate // Head is at [0]
 	Path          []Coordinate
 	Depth         int
@@ -232,9 +239,7 @@ type SnakePathGenResp struct {
 	Path      []Coordinate
 }
 
-const DepthLimit = 20
-
-// TOOD: Gravity is only -1, not actually reaching the flooor
+const DepthLimit = 50
 
 func (g *Game) snakePathGen(ctx context.Context, req *SnakePathReq) <-chan SnakePathGenResp {
 	ch := make(chan SnakePathGenResp)
@@ -266,7 +271,13 @@ func (g *Game) snakePathGen(ctx context.Context, req *SnakePathReq) <-chan Snake
 				continue
 			}
 
-			req.AppendVisited(next)
+			if g.IsSnake(next, req.SnakeBotID) {
+				continue
+			}
+
+			if next.IsInside(req.SnakeCoords[:len(req.SnakeCoords)-2]) {
+				continue
+			}
 
 			if next.X == req.Goal.X && next.Y == req.Goal.Y {
 				ch <- SnakePathGenResp{
@@ -278,20 +289,17 @@ func (g *Game) snakePathGen(ctx context.Context, req *SnakePathReq) <-chan Snake
 				return
 			}
 
-			if g.IsWall(next) {
-				continue
-			}
+			req.AppendVisited(next)
 
-			if g.IsSnake(next) {
+			if g.IsWall(next) {
 				continue
 			}
 
 			nextSnake := append([]Coordinate{next}, req.SnakeCoords[:len(req.SnakeCoords)-1]...)
 
 			if !g.HasWallBeneath(nextSnake) {
-				for _, coord := range nextSnake {
-					coord.X--
-					coord.Y++
+				if g.ApplyGravity(nextSnake, 0) {
+					continue
 				}
 			}
 
@@ -301,6 +309,7 @@ func (g *Game) snakePathGen(ctx context.Context, req *SnakePathReq) <-chan Snake
 
 			nextChannels[directionName] = g.snakePathGen(ctx, &SnakePathReq{
 				Goal:          req.Goal,
+				SnakeBotID:    req.SnakeBotID,
 				SnakeCoords:   nextSnake,
 				Path:          append(req.Path, next),
 				Depth:         req.Depth + 1,
@@ -355,11 +364,31 @@ func (g *Game) IsWall(p Coordinate) bool {
 func (g *Game) HasWallBeneath(coords []Coordinate) bool {
 	for _, coord := range coords {
 		if coord.Y+1 >= 0 && coord.Y+1 < g.Grid.Height && coord.X >= 0 && coord.X < g.Grid.Width {
-			return g.Grid.Cells[coord.Y+1][coord.X] == GridCellPlatform
+			cell := g.Grid.Cells[coord.Y+1][coord.X]
+
+			if cell == GridCellPlatform || cell == GridPowerSource {
+				return true
+			}
 		}
 	}
 
 	return false
+}
+
+func (g *Game) ApplyGravity(coords []Coordinate, depth int) (outOfBounds bool) {
+	if depth >= 50 {
+		return true
+	}
+
+	for i := range coords {
+		coords[i].Y++
+	}
+
+	if !g.HasWallBeneath(coords) {
+		outOfBounds = g.ApplyGravity(coords, depth+1)
+	}
+
+	return outOfBounds
 }
 
 func (g *Game) IsPowerCell(p Coordinate) bool {
@@ -372,14 +401,12 @@ func (g *Game) IsPowerCell(p Coordinate) bool {
 	return true
 }
 
-func (g *Game) IsSnake(p Coordinate) bool {
-	//for _, snakeBot := range  {
-	//	if p.Equal(snakeBot.Head()) { // We want to eat them
-	//		return true
-	//	}
-	//}
-
+func (g *Game) IsSnake(p Coordinate, currentSnakeBotID SnakeBotID) bool {
 	for _, snakeBot := range append(g.Them.SnakeBots, g.Me.SnakeBots...) {
+		if snakeBot.ID == currentSnakeBotID {
+			continue
+		}
+
 		if p.IsInside(snakeBot.Body) {
 			return true
 		}
@@ -416,21 +443,88 @@ func (s *SnakeBot) Head() Coordinate {
 	return s.Body[0]
 }
 
-func (s *SnakeBot) Closest(coords []Coordinate) Coordinate {
-	head := s.Body[len(s.Body)-1]
-	var distance int
-	var closestCoord Coordinate
+func (s *SnakeBot) SortedByDistance(coords []Coordinate) []Coordinate {
+	head := s.Body[0]
 
-	for _, coord := range coords {
-		newDistance := coord.Distance(head)
+	sorted := make([]Coordinate, len(coords))
+	copy(sorted, coords)
 
-		if distance == 0 || newDistance < distance {
-			distance = newDistance
-			closestCoord = coord
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Distance(head) < sorted[j].Distance(head)
+	})
+
+	return sorted
+}
+
+func (s *SnakeBot) FindPowerSource(game *Game, avoid []Coordinate) (Coordinate, string) {
+	powerSources := s.SortedByDistance(game.Grid.PowerSources)
+
+	counter := 0
+
+	for _, powerSource := range powerSources {
+		if powerSource.IsInside(avoid) {
+			continue
 		}
+
+		counter++
+
+		if counter >= 5 {
+			return Coordinate{}, ""
+		}
+
+		directionName, path := game.SnakePath(&SnakePathReq{
+			Goal:        powerSource,
+			SnakeBotID:  s.ID,
+			SnakeCoords: s.Body,
+		})
+
+		game.Debug(false, s.ID, powerSource)
+		game.Debug(false, directionName, path)
+
+		if directionName == "" {
+			continue
+		}
+
+		var stuckSnakeCoords []Coordinate
+		snakeLen := len(s.Body)
+		pathReversed := reverseSlice(path)
+		pathLen := len(pathReversed)
+
+		if pathLen >= snakeLen {
+			stuckSnakeCoords = pathReversed[:snakeLen]
+		} else {
+			stuckSnakeCoords = append(pathReversed, s.Body[:snakeLen-pathLen]...)
+		}
+
+		// Don't get stuck
+		stuck, _ := game.SnakePath(&SnakePathReq{
+			Goal:        s.Body[len(s.Body)-1],
+			SnakeBotID:  s.ID,
+			SnakeCoords: stuckSnakeCoords,
+		})
+
+		if stuck == "" {
+			continue
+		}
+
+		return powerSource, fmt.Sprintf("%v %s;", s.ID, directionName)
 	}
 
-	return closestCoord
+	return Coordinate{}, ""
+}
+
+func (s *SnakeBot) GoInALoop(game *Game) string {
+	directionName, _ := game.SnakePath(&SnakePathReq{
+		Goal:        s.Body[len(s.Body)-1],
+		SnakeBotID:  s.ID,
+		SnakeCoords: s.Body,
+	})
+
+	if directionName != "" {
+		return fmt.Sprintf("%v %s;", s.ID, directionName)
+	}
+
+	return ""
 }
 
 type Coordinate struct {
@@ -461,4 +555,15 @@ func (c Coordinate) IsInside(coords []Coordinate) bool {
 	}
 
 	return false
+}
+
+func reverseSlice[T any](s []T) (c []T) {
+	c = make([]T, len(s))
+	n := len(s)
+
+	for i, v := range s {
+		c[n-1-i] = v
+	}
+
+	return c
 }
